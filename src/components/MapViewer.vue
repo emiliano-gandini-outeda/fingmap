@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { EdificioPrincipal, Aulario } from './svgs'
 
 const props = defineProps({
   mapSrc: String,
@@ -10,333 +11,47 @@ const props = defineProps({
 
 const emit = defineEmits(['room-click'])
 
-const mapContainer = ref(null)
-const svgWrapper = ref(null)
-const svgContent = ref('')
-const loading = ref(true)
-const error = ref(null)
-const scale = ref(1)
-const isDragging = ref(false)
-const dragStart = ref({ x: 0, y: 0 })
+const currentScale = ref(1)
 const pan = ref({ x: 0, y: 0 })
 
-const loadMap = async () => {
-  if (!props.mapSrc) return
-  
-  loading.value = true
-  error.value = null
-  scale.value = 1
-  pan.value = { x: 0, y: 0 }
-  
-  try {
-    const response = await fetch(props.mapSrc)
-    if (!response.ok) {
-      throw new Error('Error al cargar el mapa')
-    }
-    
-    const text = await response.text()
-    svgContent.value = text
-    
-    await nextTick()
-    
-    setupSvgStyles()
-    setupClickHandlers()
-    
-    await nextTick()
-    centerMap()
-    
-    if (props.highlightedRoom) {
-      findAndHighlightRoom()
-    }
-    
-    loading.value = false
-  } catch (err) {
-    error.value = err.message
-    loading.value = false
-  }
-}
-
-const setupSvgStyles = () => {
-  const svg = mapContainer.value?.querySelector('svg')
-  if (!svg) return
-  
-  svg.style.background = '#2d2d2d'
-  svg.style.border = 'none'
-  
-  svg.querySelectorAll('*').forEach(el => {
-    const tagName = el.tagName.toLowerCase()
-    
-    if (['path', 'rect', 'polygon', 'circle', 'ellipse', 'g'].includes(tagName)) {
-      const fill = el.getAttribute('fill') || ''
-      const stroke = el.getAttribute('stroke') || ''
-      
-      if (!fill || fill === 'none' || fill === '#000' || fill === '#000000') {
-        el.setAttribute('fill', '#2d2d2d')
-        el.style.fill = '#2d2d2d'
-      }
-      
-      if (stroke && stroke !== 'none') {
-        el.setAttribute('stroke', 'none')
-        el.style.stroke = 'none'
-      }
-      
-      el.style.strokeWidth = '0'
-    }
-  })
-}
-
-const findAndHighlightRoom = async () => {
-  console.log('findAndHighlightRoom called, highlightedRoom:', props.highlightedRoom)
-  await nextTick()
-  
-  if (!props.highlightedRoom || !mapContainer.value) {
-    return
-  }
-  
-  const svg = mapContainer.value.querySelector('svg')
-  if (!svg) {
-    console.log('No SVG found')
-    return
-  }
-  
-  svg.querySelectorAll('.room-highlight').forEach(el => el.remove())
-  
-  const searchRoom = props.highlightedRoom.trim().toLowerCase()
-  console.log('Searching for room:', searchRoom)
-  
-  let roomElement = null
-  let bestMatch = null
-  let bestScore = 0
-  
-  const allElements = svg.querySelectorAll('*')
-  console.log('Total elements in SVG:', allElements.length)
-  
-  const samples = []
-  for (let i = 0; i < Math.min(50, allElements.length); i++) {
-    const el = allElements[i]
-    const value = el.getAttribute('value') || ''
-    const textContent = el.textContent?.trim() || ''
-    if (value || textContent) {
-      samples.push({ value, textContent, tag: el.tagName })
-    }
-  }
-  console.log('Sample elements:', samples.slice(0, 10))
-  
-  for (const el of allElements) {
-    const value = (el.getAttribute('value') || '').trim().toLowerCase()
-    const textContent = (el.textContent || '').trim().toLowerCase()
-    
-    if (!value && !textContent) continue
-    
-    let score = 0
-    if (value === searchRoom) {
-      score = 100
-    } else if (value.includes(searchRoom)) {
-      score = 80
-    } else if (textContent === searchRoom) {
-      score = 90
-    } else if (textContent.includes(searchRoom)) {
-      score = 70
-    }
-    
-    if (score > bestScore) {
-      bestScore = score
-      bestMatch = el
-    }
-  }
-  
-  roomElement = bestMatch
-  console.log('Best match:', roomElement?.getAttribute('value') || roomElement?.textContent?.trim(), 'Score:', bestScore)
-  
-  if (roomElement && bestScore > 0) {
-    try {
-      const bbox = roomElement.getBBox()
-      console.log('Found room element:', roomElement.getAttribute('value'), 'bbox:', bbox)
-      
-      const padding = 10
-      const highlightRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-      highlightRect.setAttribute('x', String(bbox.x - padding))
-      highlightRect.setAttribute('y', String(bbox.y - padding))
-      highlightRect.setAttribute('width', String(bbox.width + padding * 2))
-      highlightRect.setAttribute('height', String(bbox.height + padding * 2))
-      highlightRect.setAttribute('class', 'room-highlight')
-      highlightRect.setAttribute('fill', 'none')
-      highlightRect.setAttribute('stroke', '#ff0000')
-      highlightRect.setAttribute('stroke-width', '4')
-      highlightRect.setAttribute('stroke-dasharray', '15, 8')
-      
-      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-      style.textContent = `
-        .room-highlight {
-          animation: svgBlink 0.5s infinite alternate;
-          filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8));
-        }
-        @keyframes svgBlink {
-          from { stroke: #ff0000; }
-          to { stroke: #ff3333; }
-        }
-      `
-      
-      svg.appendChild(style)
-      svg.appendChild(highlightRect)
-      
-      const roomDisplay = roomElement.getAttribute('value') || roomElement.textContent?.trim() || props.highlightedRoom
-      
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-      label.setAttribute('x', String(bbox.x - padding))
-      label.setAttribute('y', String(bbox.y - padding - 8))
-      label.setAttribute('fill', '#ff0000')
-      label.setAttribute('font-size', '14')
-      label.setAttribute('font-weight', 'bold')
-      label.setAttribute('font-family', 'Arial, sans-serif')
-      label.setAttribute('class', 'room-highlight')
-      label.textContent = roomDisplay
-      svg.appendChild(label)
-      
-      setTimeout(() => {
-        const elRect = roomElement.getBoundingClientRect()
-        const containerRect = mapContainer.value.getBoundingClientRect()
-        
-        pan.value = {
-          x: containerRect.width / 2 - (elRect.left - containerRect.left + elRect.width / 2),
-          y: containerRect.height / 2 - (elRect.top - containerRect.top + elRect.height / 2)
-        }
-      }, 300)
-    } catch (e) {
-      console.error('Error creating highlight:', e)
-    }
-  }
-}
-
-const setupClickHandlers = () => {
-  const svg = mapContainer.value?.querySelector('svg')
-  if (!svg) return
-  
-  svg.querySelectorAll('*').forEach(el => {
-    const tagName = el.tagName.toLowerCase()
-    const value = el.getAttribute('value') || ''
-    
-    if (['path', 'rect', 'polygon', 'circle', 'ellipse', 'g'].includes(tagName)) {
-      if (value && value.length > 1 && !['Escaleras', 'Ascensor', 'ENTRADA', 'Entrada', 'Baños'].includes(value)) {
-        el.style.cursor = 'pointer'
-        el.style.transition = 'all 0.2s ease'
-        
-        el.addEventListener('click', (e) => {
-          e.stopPropagation()
-          emit('room-click', value)
-        })
-      }
-    }
-  })
-}
-
-const handleWheel = (e) => {
-  e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
-  scale.value = Math.max(0.25, Math.min(3, scale.value + delta))
-}
-
-const handleMouseDown = (e) => {
-  if (e.button === 0) {
-    isDragging.value = true
-    dragStart.value = { x: e.clientX - pan.value.x, y: e.clientY - pan.value.y }
-    if (mapContainer.value) {
-      mapContainer.value.style.cursor = 'grabbing'
-    }
-  }
-}
-
-const handleMouseMove = (e) => {
-  if (isDragging.value) {
-    pan.value = { x: e.clientX - dragStart.value.x, y: e.clientY - dragStart.value.y }
-  }
-}
-
-const handleMouseUp = () => {
-  isDragging.value = false
-  if (mapContainer.value) {
-    mapContainer.value.style.cursor = 'grab'
-  }
-}
+const ComponentMap = computed(() => {
+  return props.building === 'aulario' ? Aulario : EdificioPrincipal
+})
 
 const handleZoomIn = () => {
-  scale.value = Math.min(3, scale.value + 0.25)
+  currentScale.value = Math.min(3, currentScale.value + 0.25)
 }
 
 const handleZoomOut = () => {
-  scale.value = Math.max(0.25, scale.value - 0.25)
+  currentScale.value = Math.max(0.25, currentScale.value - 0.25)
 }
 
 const handleReset = () => {
-  scale.value = 1
-  centerMap()
+  currentScale.value = 1
+  pan.value = { x: 0, y: 0 }
 }
 
-const centerMap = () => {
-  const container = mapContainer.value
-  const svg = container?.querySelector('svg')
-  
-  if (!container || !svg) return
-  
-  const containerRect = container.getBoundingClientRect()
-  const svgRect = svg.getBoundingClientRect()
-  
-  if (svgRect.width > 0 && svgRect.height > 0) {
-    const scaleX = containerRect.width / svgRect.width
-    const scaleY = containerRect.height / svgRect.height
-    scale.value = Math.min(scaleX, scaleY, 1) * 0.9
-    
-    pan.value = {
-      x: (containerRect.width - svgRect.width * scale.value) / 2,
-      y: (containerRect.height - svgRect.height * scale.value) / 2
-    }
-  }
+const handleRoomClick = ({ value }) => {
+  emit('room-click', value)
 }
 
-watch(() => [props.mapSrc, props.highlightedRoom], async () => {
-  if (props.mapSrc) {
-    await loadMap()
-    if (props.highlightedRoom) {
-      setTimeout(() => {
-        findAndHighlightRoom()
-      }, 500)
-    }
-  } else if (props.highlightedRoom) {
-    await nextTick()
-    setTimeout(() => {
-      findAndHighlightRoom()
-    }, 500)
-  }
-})
+const handleLoad = () => {
+  console.log('Mapa cargado correctamente')
+}
 
-onMounted(() => {
-  loadMap()
+const handleError = (error) => {
+  console.error('Error al cargar mapa:', error)
+}
+
+watch(() => [props.mapSrc, props.highlightedRoom], () => {
+  currentScale.value = 1
+  pan.value = { x: 0, y: 0 }
 })
 </script>
 
 <template>
   <div class="map-viewer">
-    <div v-if="loading" class="map-loading">
-      <div class="loading-content">
-        <div class="spinner"></div>
-        <div class="loading-text">
-          <p>Cargando mapa</p>
-          <span>{{ building === 'aulario' ? 'Aulario' : 'Edificio Principal' }} - Piso {{ floor }}</span>
-        </div>
-      </div>
-    </div>
-    
-    <div v-else-if="error" class="map-error">
-      <div class="error-content">
-        <svg viewBox="0 0 24 24" width="64" height="64">
-          <path fill="#e74c3c" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-        </svg>
-        <p>{{ error }}</p>
-        <button @click="loadMap">Reintentar</button>
-      </div>
-    </div>
-    
-    <div v-else class="map-content">
+    <div class="map-content">
       <div class="map-controls">
         <div class="zoom-controls">
           <button class="zoom-btn" @click="handleZoomIn" title="Acercar">
@@ -355,30 +70,30 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-        <div class="scale-display">{{ Math.round(scale * 100) }}%</div>
+        <div class="scale-display">{{ Math.round(currentScale * 100) }}%</div>
       </div>
-      
-      <div 
-        ref="mapContainer"
-        class="map-scroll-container"
-        @wheel="handleWheel"
-        @mousedown="handleMouseDown"
-        @mousemove="handleMouseMove"
-        @mouseup="handleMouseUp"
-        @mouseleave="handleMouseUp"
-      >
-        <div 
-          ref="svgWrapper"
+
+      <div class="map-scroll-container">
+        <div
           class="map-svg-wrapper"
-          :style="{ 
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+          :style="{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${currentScale})`,
             transformOrigin: '0 0'
           }"
         >
-          <div v-html="svgContent" class="svg-content"></div>
+          <ComponentMap
+            v-if="floor"
+            :floor="floor"
+            :highlighted-room="highlightedRoom"
+            theme="dark"
+            :interactive="true"
+            @room-click="handleRoomClick"
+            @load="handleLoad"
+            @error="handleError"
+          />
         </div>
       </div>
-      
+
       <div v-if="highlightedRoom" class="highlight-banner">
         <svg viewBox="0 0 24 24" width="18" height="18">
           <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
@@ -488,105 +203,23 @@ onMounted(() => {
   position: relative;
 }
 
-.map-svg-wrapper .svg-content {
-  position: relative;
+.map-svg-wrapper :deep(.editable-svg) {
+  width: auto;
+  height: auto;
 }
 
-.map-svg-wrapper :deep(svg) {
+.map-svg-wrapper :deep(.editable-svg .svg-container svg) {
   width: auto;
   height: auto;
   max-width: none;
   display: block;
   background: #2d2d2d !important;
-  border: none !important;
-  box-shadow: none !important;
 }
 
-.map-svg-wrapper :deep(svg text) {
+.map-svg-wrapper :deep(.editable-svg .svg-container svg text),
+.map-svg-wrapper :deep(.editable-svg .svg-container svg tspan) {
   font-family: 'Segoe UI', Arial, sans-serif;
   user-select: none;
-}
-
-.map-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 60vh;
-  min-height: 400px;
-}
-
-.loading-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  color: var(--text-muted);
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 3px solid #4a4a4a;
-  border-top-color: var(--navy);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.loading-text {
-  text-align: center;
-}
-
-.loading-text p {
-  font-weight: 600;
-  color: var(--white);
-}
-
-.loading-text span {
-  font-size: 0.9rem;
-  color: #b0b0b0;
-}
-
-.map-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 60vh;
-  min-height: 400px;
-  padding: 2rem;
-  text-align: center;
-}
-
-.error-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
-
-.error-content p {
-  color: #e74c3c;
-  font-weight: 600;
-}
-
-.error-content button {
-  padding: 0.6rem 1.5rem;
-  background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 100%);
-  color: var(--white);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: var(--transition);
-}
-
-.error-content button:hover {
-  box-shadow: var(--shadow-hover);
-  transform: translateY(-2px);
 }
 
 .highlight-banner {
