@@ -73,19 +73,19 @@ const onSelectFloor = (floor) => {
                     v-for="floor in building.floors" 
                     :key="floor"
                     class="floor-item"
-                  >
-                    <button 
-                      class="floor-btn"
-                      :class="{ active: currentFloor === floor && currentBuilding?.id === building.id }"
-                      @click="onSelectFloor(floor)"
-                    >
-                      <span class="floor-icon">
-                        <svg viewBox="0 0 24 24" width="16" height="16">
-                          <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-                        </svg>
-                      </span>
-                      Piso {{ floor }}
-                    </button>
+                      >
+                        <button 
+                          class="floor-btn"
+                          :class="{ active: currentFloor === floor && currentBuilding?.id === building.id }"
+                          @click="onSelectFloor(floor)"
+                        >
+                          <span class="floor-icon">
+                            <svg viewBox="0 0 24 24" width="16" height="16">
+                              <path fill="currentColor" d="M4 4h4v4H4V4zm6 0h4v4h-4V4zm6 0h4v4h-4V4zM4 10h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4zM4 16h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z"/>
+                            </svg>
+                          </span>
+                          Piso {{ floor }}
+                        </button>
                   </li>
                 </ul>
               </div>

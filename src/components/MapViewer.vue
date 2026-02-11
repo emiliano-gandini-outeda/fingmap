@@ -86,6 +86,7 @@ const setupSvgStyles = () => {
 }
 
 const findAndHighlightRoom = async () => {
+  console.log('findAndHighlightRoom called, highlightedRoom:', props.highlightedRoom)
   await nextTick()
   
   if (!props.highlightedRoom || !mapContainer.value) {
@@ -93,17 +94,34 @@ const findAndHighlightRoom = async () => {
   }
   
   const svg = mapContainer.value.querySelector('svg')
-  if (!svg) return
+  if (!svg) {
+    console.log('No SVG found')
+    return
+  }
   
   svg.querySelectorAll('.room-highlight').forEach(el => el.remove())
   
   const searchRoom = props.highlightedRoom.trim().toLowerCase()
+  console.log('Searching for room:', searchRoom)
   
   let roomElement = null
   let bestMatch = null
   let bestScore = 0
   
   const allElements = svg.querySelectorAll('*')
+  console.log('Total elements in SVG:', allElements.length)
+  
+  const samples = []
+  for (let i = 0; i < Math.min(50, allElements.length); i++) {
+    const el = allElements[i]
+    const value = el.getAttribute('value') || ''
+    const textContent = el.textContent?.trim() || ''
+    if (value || textContent) {
+      samples.push({ value, textContent, tag: el.tagName })
+    }
+  }
+  console.log('Sample elements:', samples.slice(0, 10))
+  
   for (const el of allElements) {
     const value = (el.getAttribute('value') || '').trim().toLowerCase()
     const textContent = (el.textContent || '').trim().toLowerCase()
@@ -128,33 +146,52 @@ const findAndHighlightRoom = async () => {
   }
   
   roomElement = bestMatch
+  console.log('Best match:', roomElement?.getAttribute('value') || roomElement?.textContent?.trim(), 'Score:', bestScore)
   
   if (roomElement && bestScore > 0) {
     try {
       const bbox = roomElement.getBBox()
+      console.log('Found room element:', roomElement.getAttribute('value'), 'bbox:', bbox)
       
+      const padding = 10
       const highlightRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-      highlightRect.setAttribute('x', bbox.x - 5)
-      highlightRect.setAttribute('y', bbox.y - 5)
-      highlightRect.setAttribute('width', bbox.width + 10)
-      highlightRect.setAttribute('height', bbox.height + 10)
+      highlightRect.setAttribute('x', String(bbox.x - padding))
+      highlightRect.setAttribute('y', String(bbox.y - padding))
+      highlightRect.setAttribute('width', String(bbox.width + padding * 2))
+      highlightRect.setAttribute('height', String(bbox.height + padding * 2))
       highlightRect.setAttribute('class', 'room-highlight')
       highlightRect.setAttribute('fill', 'none')
       highlightRect.setAttribute('stroke', '#ff0000')
-      highlightRect.setAttribute('stroke-width', '3')
-      highlightRect.setAttribute('stroke-dasharray', '10, 5')
-      highlightRect.style.animation = 'svgBlink 0.6s infinite alternate'
-      highlightRect.style.filter = 'drop-shadow(0 0 8px rgba(255, 0, 0, 0.7))'
+      highlightRect.setAttribute('stroke-width', '4')
+      highlightRect.setAttribute('stroke-dasharray', '15, 8')
       
+      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+      style.textContent = `
+        .room-highlight {
+          animation: svgBlink 0.5s infinite alternate;
+          filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8));
+        }
+        @keyframes svgBlink {
+          from { stroke: #ff0000; }
+          to { stroke: #ff3333; }
+        }
+      `
+      
+      svg.appendChild(style)
       svg.appendChild(highlightRect)
       
-      if (svg.querySelector('#svgHighlightStyle')) {
-        svg.querySelector('#svgHighlightStyle').remove()
-      }
-      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-      style.setAttribute('id', 'svgHighlightStyle')
-      style.textContent = '@keyframes svgBlink { from { stroke: #ff0000; } to { stroke: #ff4444; } }'
-      svg.insertBefore(style, svg.firstChild)
+      const roomDisplay = roomElement.getAttribute('value') || roomElement.textContent?.trim() || props.highlightedRoom
+      
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+      label.setAttribute('x', String(bbox.x - padding))
+      label.setAttribute('y', String(bbox.y - padding - 8))
+      label.setAttribute('fill', '#ff0000')
+      label.setAttribute('font-size', '14')
+      label.setAttribute('font-weight', 'bold')
+      label.setAttribute('font-family', 'Arial, sans-serif')
+      label.setAttribute('class', 'room-highlight')
+      label.textContent = roomDisplay
+      svg.appendChild(label)
       
       setTimeout(() => {
         const elRect = roomElement.getBoundingClientRect()
@@ -164,7 +201,7 @@ const findAndHighlightRoom = async () => {
           x: containerRect.width / 2 - (elRect.left - containerRect.left + elRect.width / 2),
           y: containerRect.height / 2 - (elRect.top - containerRect.top + elRect.height / 2)
         }
-      }, 200)
+      }, 300)
     } catch (e) {
       console.error('Error creating highlight:', e)
     }
@@ -256,11 +293,19 @@ const centerMap = () => {
   }
 }
 
-watch(() => [props.mapSrc, props.highlightedRoom], () => {
+watch(() => [props.mapSrc, props.highlightedRoom], async () => {
   if (props.mapSrc) {
-    loadMap()
+    await loadMap()
+    if (props.highlightedRoom) {
+      setTimeout(() => {
+        findAndHighlightRoom()
+      }, 500)
+    }
   } else if (props.highlightedRoom) {
-    findAndHighlightRoom()
+    await nextTick()
+    setTimeout(() => {
+      findAndHighlightRoom()
+    }, 500)
   }
 })
 
